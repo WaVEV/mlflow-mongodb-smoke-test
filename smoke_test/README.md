@@ -1,95 +1,95 @@
-# Smoke de MLflow por HTTP y MongoDB
+# MLflow smoke tests over HTTP and MongoDB
 
-El runner instala el plugin del checkout indicado con `--plugin-dir` en un entorno temporal por versión de MLflow.
-Levanta su propio servidor en un puerto libre y utiliza una base MongoDB nueva por escenario.
-No usa el servidor de `localhost:5000`, ni borra la base indicada en tu URI.
+The runner installs the plugin checkout specified by `--plugin-dir` in a temporary environment for each MLflow version.
+It starts its own server on an available port and uses a new MongoDB database for each scenario.
+It does not use the server at `localhost:5000` or delete the database specified in your URI.
 
-Necesitás MongoDB 8.0+ accesible y Python 3.10+ con `venv` y acceso a los paquetes de PyPI
-o tu mirror. Se recomienda Python 3.11 o 3.12 para recorrer releases antiguos y actuales con el
-mismo intérprete. Docker es opcional: un MongoDB que ya tengas levantado sirve.
+You need an accessible MongoDB 8.0+ instance and Python 3.10+ with `venv` and access to PyPI
+or your package mirror. Python 3.11 or 3.12 is recommended for running older and newer releases
+with the same interpreter. Docker is optional: an existing MongoDB instance works.
 
-Cloná este repositorio y el plugin por separado. Desde la raíz de este repositorio,
-indicá la ruta al checkout del plugin que querés probar. Puede contener cambios sin commit.
-Arrancá por una versión:
+Clone this repository and the plugin separately. From this repository's root, specify the
+path to the plugin checkout you want to test. The checkout may contain uncommitted changes.
+Start with one version:
 
 ```bash
 export MONGODB_URI='mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=2000'
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions 3.5.1
 ```
 
-Después, toda la matriz de versiones estables 3.x desde 3.5, incluidos sus parches:
+Then run the full matrix of stable 3.x versions starting with 3.5, including patch releases:
 
 ```bash
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions-all
 ```
 
-No hace falta activar la `.venv` del proyecto ni instalar pytest en el entorno del runner.
-El runner utiliza la biblioteca estándar e instala MLflow, el plugin y sus herramientas
-en entornos temporales. Los entornos se eliminan al terminar cada versión. Los escenarios
-usan pytest, pero están fuera de `tests/` y no entran en la suite habitual del plugin.
-Cliente y servidor tienen la misma versión de MLflow; esto no prueba clientes de distinta versión.
+You do not need to activate the project's `.venv` or install pytest in the runner's environment.
+The runner uses the standard library and installs MLflow, the plugin, and its tools in temporary
+environments. These environments are deleted after each version finishes. Scenarios use pytest,
+but live outside `tests/` and are separate from the plugin's regular test suite.
+The client and server use the same MLflow version; this does not test clients against different server versions.
 
-## Recortar una ejecución
+## Selecting scenarios
 
 ```bash
-# Ver versiones sin instalar ni tocar MongoDB.
+# List versions without installing dependencies or accessing MongoDB.
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions-all --list
 
-# Experimentos solamente, incluidos los casos obligatorios de tags.
+# Experiments only, including the mandatory tag scenarios.
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions 3.5.1 --family experiments
 
-# Traces y assessments en dos versiones.
+# Traces and assessments across two versions.
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions 3.5.1 3.17.1 --family traces assessments
 
-# Un caso por su nombre, con su propio servidor y base nueva.
+# Select a case by name, with its own server and new database.
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions 3.5.1 --case simple_attributes_artifacts_and_restart
 
-# Conservar únicamente bases de escenarios fallidos para inspeccionarlas.
+# Preserve only failed scenarios' databases for inspection.
 python3.12 smoke_test/run.py --plugin-dir ../mlflow-mongodb --versions 3.5.1 --family experiments --keep-failed-db
 ```
 
-Familias: `experiments`, `runs`, `traces`, `assessments`, `logged_models`, `registry`,
-`prompts`, `links`, `metrics`, `diagnostics`. Sin `--family`, se seleccionan todas.
-`--case` es una expresión `pytest -k`, no un ID del plan. Las variantes con estructura
-compartida están parametrizadas; cada variante recibe servidor y base propios.
-La matriz completa levanta muchos servidores y puede tardar bastante.
+Families: `experiments`, `runs`, `traces`, `assessments`, `logged_models`, `registry`,
+`prompts`, `links`, `metrics`, `diagnostics`. All are selected when `--family` is omitted.
+`--case` is a `pytest -k` expression, not an ID from the plan. Variants that share a structure
+are parametrized; each variant receives its own server and database.
+The full matrix starts many servers and can take a considerable amount of time.
 
-`--python` permite elegir el intérprete para los entornos. `--case-timeout` limita cada
-escenario (240 segundos por defecto), `--startup-timeout` el arranque (90 segundos),
-`--version-timeout` cada ejecución de pytest (7200 segundos) y `--install-timeout`
-cada comando de preparación (900 segundos). El manejo de procesos y timeouts está
-orientado a macOS/Linux. Tras el flush de exportación, los escenarios de traces esperan
-hasta 30 segundos por el payload completo y sus spans Mongo; otros errores públicos se propagan.
+`--python` selects the interpreter used for the environments. `--case-timeout` limits each
+scenario (240 seconds by default), `--startup-timeout` limits server startup (90 seconds),
+`--version-timeout` limits each pytest invocation (7200 seconds), and `--install-timeout`
+limits each setup command (900 seconds). Process and timeout handling targets macOS/Linux.
+After flushing the exporter, trace scenarios wait up to 30 seconds for the full payload and
+its MongoDB spans; other public errors propagate.
 
-## Qué comprueba
+## What it checks
 
-- Creación por cliente y REST, lifecycle, errores, tags y búsquedas de experimentos.
-- Runs: logging sync/async, inmutabilidad de params, valores no finitos, historial y resumen
-  vigente, inputs de datasets/modelos, outputs, estado, borrado/restauración y búsquedas.
-- Traces: spans/decoradores, jerarquía, atributos, errores, metadata, logging tardío,
-  reentrega, tags, búsquedas y borrados con cascada a spans/assessments.
-- Recuperación completa desde artifacts locales en 3.5 o desde tracking store cuando
-  corresponda; reinicio del servidor y lectura desde un proceso cliente nuevo.
-- Assessments: valores nativos, updates, metadata, errores y recuperación, overrides y borrado.
-- Logged models: metadata, tags, métricas de distintos runs/datasets, filtros sobre historial,
-  orden por métricas, paginación y borrado lógico.
-- Registry: modelos/versiones, descripciones, tags, rename, stages, latest versions, aliases,
-  redacción al borrar versiones, copias con artifacts locales y asignación concurrente de versiones.
-- Prompts: metadata/versiones, tags, aliases, render, búsquedas, borrado y vínculos.
-- Métricas agregadas de traces/spans/assessments cuando upstream expone la API: filtros,
-  dimensiones, buckets UTC, percentiles, tokens y costos disponibles.
+- Experiment creation through the client and REST, lifecycle, errors, tags, and searches.
+- Runs: synchronous/asynchronous logging, parameter immutability, non-finite values, metric
+  history and current summaries, dataset/model inputs, outputs, status, deletion/restoration, and searches.
+- Traces: spans/decorators, hierarchy, attributes, errors, metadata, late logging,
+  redelivery, tags, searches, and deletion cascading to spans/assessments.
+- Full retrieval from local artifacts in 3.5 or from the tracking store where applicable;
+  server restarts and reads from a new client process.
+- Assessments: native values, updates, metadata, errors and recovery, overrides, and deletion.
+- Logged models: metadata, tags, metrics from different runs/datasets, history filters,
+  metric ordering, pagination, and soft deletion.
+- Registry: models/versions, descriptions, tags, renaming, stages, latest versions, aliases,
+  redaction on version deletion, copies using local artifacts, and concurrent version allocation.
+- Prompts: metadata/versions, tags, aliases, rendering, searches, deletion, and links.
+- Aggregated trace/span/assessment metrics where upstream exposes the API: filters,
+  dimensions, UTC buckets, percentiles, and available token and cost metrics.
 
-Todas las familias de búsqueda implementadas tienen casos. El objetivo no es recorrer
-cada combinación posible de campos/comparadores ni sustituir la suite funcional.
-Los resultados se comparan con datos conocidos del escenario; MongoDB se consulta para
-verificar persistencia, sin usar pipelines del plugin como resultado esperado.
-El transporte `RestStore` usado en algunos casos es el cliente HTTP de MLflow; nunca se
-instancian los stores MongoDB del plugin desde los tests.
+All implemented search families have scenarios. The goal is not to cover every possible
+field/comparator combination or replace the functional suite.
+Results are compared with known scenario data; MongoDB is queried to verify persistence,
+without using plugin pipelines as the expected result.
+The `RestStore` transport used in some cases is MLflow's HTTP client; tests never instantiate
+the plugin's MongoDB stores directly.
 
-Los ejemplos viejos se adaptaron a escenarios autónomos, sin ejecutar los archivos
-originales con su URI fija:
+Older examples were adapted into standalone scenarios without running the original files
+with their fixed URIs:
 
-| Script anterior | Escenario equivalente |
+| Previous script | Equivalent scenario |
 | --- | --- |
 | `trace_test.py`, `test.py` | `simple_attributes_artifacts_and_restart`, `decorated_nested_script_equivalent` |
 | `trace_test2.py` | `decorated_nested_script_equivalent` |
@@ -98,91 +98,91 @@ originales con su URI fija:
 | `test5.py` | `experiment_isolation_script_equivalent` |
 | `mlflow_smoke_dataset_inputs.py` | `dataset_inputs_and_fluent_script_equivalent` |
 
-## Reportes y fallos conocidos
+## Reports and known failures
 
-El runner muestra progreso por caso. Guarda todo en `.cache/mlflow-smoke/run-*/`:
+The runner displays progress for each case. Everything is saved under `.cache/mlflow-smoke/run-*/`:
 
-- `summary.json`: matriz, filtros elegidos, huella del código, estado, duración y conteos.
+- `summary.json`: version matrix, selected filters, source fingerprint, status, duration, and counts.
 - `<version>/client.log`, `install.log`, `packages.txt`, `junit.xml`, `cases.json`.
-- `<version>/capabilities.json`: firmas y rutas REST de la instalación upstream.
-- Un directorio por escenario con `scenario.json`, `server.log`, `evidence.jsonl` y artifacts.
-  `scenario.json` permite relacionar el directorio con el caso y su base de datos;
-  `server.json` registra el PID y la URL del servidor de ese escenario.
+- `<version>/capabilities.json`: signatures and REST routes from the upstream installation.
+- A directory per scenario containing `scenario.json`, `server.log`, `evidence.jsonl`, and artifacts.
+  `scenario.json` maps the directory to its case and database;
+  `server.json` records that scenario's server PID and URL.
 
-`evidence.jsonl` registra método/ruta/respuesta HTTP y consultas/resultados Mongo.
-Cada consulta Mongo incluye un campo `mongosh` que podés pegar en la CLI: usa la base
-generada y Extended JSON para conservar tipos como `ObjectId`. Para inspeccionarla después
-de un fallo, ejecutá con `--keep-failed-db`; normalmente esa base ya se habrá limpiado.
-No registra headers de autenticación. La URI Mongo se pasa al servidor por entorno;
-los logs del servidor reemplazan esa URI por un marcador. Usá datos de smoke, no datos reales.
-La huella incluye los archivos Python del checkout del plugin indicado y del smoke, más setup/pyproject, incluso
-si no están commiteados. Si cambian durante una versión, se informa `SOURCE_CHANGED`.
+`evidence.jsonl` records HTTP methods/routes/responses and MongoDB queries/results.
+Each MongoDB query includes a `mongosh` field you can paste into the CLI: it uses the generated
+database and Extended JSON to preserve types such as `ObjectId`. To inspect the database after
+a failure, use `--keep-failed-db`; otherwise, it will normally have been cleaned up.
+Authentication headers are not recorded. The MongoDB URI is passed to the server through the
+environment; server logs replace that URI with a placeholder. Use synthetic smoke data rather than real data.
+The fingerprint includes Python files from the selected plugin checkout and the smoke suite,
+plus setup/pyproject files, including uncommitted changes. Changes during a version's execution
+produce a `SOURCE_CHANGED` status.
 
-Los estados por caso distinguen `PASSED`, `FAILED`, `SETUP_FAILED`, `UNAVAILABLE_UPSTREAM`
-y `NOT_IMPLEMENTED`. El reporte conserva la fase y el error de cada fallo. Un escenario
-fallido no detiene las otras variantes o familias. Los pasos posteriores dentro del mismo
-test no se ejecutan y no se contabilizan como pruebas aprobadas. Los skips de funciones
-no implementadas son inventario visible, no cobertura exitosa.
+Case statuses distinguish `PASSED`, `FAILED`, `SETUP_FAILED`, `UNAVAILABLE_UPSTREAM`,
+and `NOT_IMPLEMENTED`. Reports preserve the phase and error for each failure. A failed scenario
+does not stop other variants or families. Later steps within the same test do not execute and
+are not counted as passing checks. Skipped unimplemented features are visible inventory,
+not successful coverage.
 
-Los tres casos de crear/modificar/borrar tags de experimentos son obligatorios: no tienen
-skip ni xfail. Los tres pasaron en la primera ejecución con MLflow 3.5.1. Se consulta Mongo
-también cuando la respuesta HTTP demuestra un no-op. El smoke no modifica el store para
-hacer pasar los escenarios.
+The three experiment tag creation/update/deletion cases are mandatory: they have no skip or
+xfail. All three passed in the first MLflow 3.5.1 run. MongoDB is also queried when the HTTP
+response demonstrates a no-op. The smoke suite does not modify the store to make scenarios pass.
 
-Las comprobaciones de persistencia inspeccionan campos de los documentos y spans, sin
-serializar los `ObjectId` con `json.dumps`. Los valores numéricos de assessments se comparan
-sin exigir identidad `int`/`float`: protobuf puede convertirlos a `double` antes del HTTP;
-los booleanos, strings, listas y diccionarios conservan comprobaciones de tipo, también anidadas.
-Los fixtures de búsqueda de registry crean runs reales y usan sources remotos de metadata,
-sin descargar ni subir artifacts a S3.
+Persistence checks inspect document and span fields without serializing `ObjectId` values
+with `json.dumps`. Numeric assessment values are compared without requiring identical
+`int`/`float` types: protobuf may convert them to `double` before HTTP transport. Booleans,
+strings, lists, and dictionaries retain type checks, including nested values.
+Registry search fixtures create real runs and use remote sources as metadata,
+without downloading or uploading S3 artifacts.
 
-Las búsquedas de logged models especifican nombre y digest de dataset. En 3.5.1, el handler
-HTTP convierte un digest omitido en `None`, que luego se usa como filtro; estos escenarios no
-acreditan búsquedas por nombre solamente. Los límites inválidos de logged models usan `-1`,
-porque upstream normaliza `0` al valor por defecto. Los de traces usan `RestStore` para que
-la solicitud llegue por HTTP, sin el retorno vacío anticipado de `MlflowClient` con límite `0`.
-El rechazo de rename sobre un experimento borrado comprueba el JSON HTTP directamente:
-`INVALID_STATE` corresponde a HTTP 500 y el adaptador de reintentos del SDK oculta ese cuerpo.
+Logged-model searches specify both dataset name and digest. In 3.5.1, the HTTP handler
+converts an omitted digest to `None`, which is then used as a filter; these scenarios do not
+establish support for searches by name alone. Invalid logged-model limits use `-1` because
+upstream normalizes `0` to the default. Invalid trace limits use `RestStore` so the request
+reaches HTTP, bypassing `MlflowClient`'s early empty return for a limit of `0`.
+Rejection of a rename on a deleted experiment checks the HTTP JSON directly:
+`INVALID_STATE` maps to HTTP 500, and the SDK retry adapter hides that response body.
 
-También hay dos comprobaciones obligatorias del esquema de tags de registry: exigen
-`{key,value}` para registered models y model versions, según la excepción acordada para
-model registry (incluidos prompts). Las entradas del tracking store siguen usando `{k,v}`.
-El runner no cambia esquemas ni migra datos. Los casos funcionales de tags verifican
-contenido por separado; no reemplazan las comprobaciones del esquema.
+There are also two mandatory registry tag schema checks: they require `{key,value}` for
+registered models and model versions, following the agreed exception for model registry
+(including prompts). Tracking store entries continue to use `{k,v}`.
+The runner does not change schemas or migrate data. Functional tag cases check content
+separately; they do not replace the schema checks.
 
-La búsqueda de prompts usa filtros y paginación sin asumir que `search_prompts` acepta
-`order_by`; el conjunto de nombres se compara independientemente del orden. Un alias de
-prompt ausente debe devolver `INVALID_PARAMETER_VALUE`. Los filtros de timestamps de model
-versions se ejecutan únicamente si el validador upstream admite ambos campos; en 3.5.1
-figuran como `UNAVAILABLE_UPSTREAM`, antes de crear el servidor y la base del escenario.
+Prompt searches use filters and pagination without assuming `search_prompts` accepts
+`order_by`; names are compared independently of their order. A missing prompt alias must
+return `INVALID_PARAMETER_VALUE`. Model-version timestamp filters run only when the upstream
+validator supports both fields; in 3.5.1, they are marked `UNAVAILABLE_UPSTREAM` before
+creating the scenario's server and database.
 
-Las APIs ausentes en una versión upstream se omiten con una razón concreta. Los filtros
-avanzados de traces y `model_id`, finalización de logged models y unlink de traces figuran
-como limitaciones del plugin. No se transforma una excepción inesperada en un skip.
-`diagnostics` comprueba el contrato vacío de `search_datasets`; eso no acredita soporte
-de almacenamiento de evaluation datasets.
+APIs missing from an upstream version are skipped with a specific reason. Advanced trace
+filters and `model_id`, logged-model finalization, and trace unlinking are recorded as plugin
+limitations. Unexpected exceptions are not converted into skips.
+`diagnostics` checks the empty `search_datasets` contract; this does not establish support
+for evaluation dataset storage.
 
-El código de salida es 0 si todos los casos seleccionados ejecutados pasan; 1 ante fallos
-o problemas de entorno, y 130 si se interrumpe. Revisá también los conteos de APIs ausentes
-y funciones no implementadas: un 0 no significa paridad completa con MLflow.
+The exit code is 0 when all selected, executed cases pass; 1 for failures or environment
+problems; and 130 when interrupted. Also review the counts of unavailable APIs and
+unimplemented features: a zero exit code does not mean full MLflow parity.
 
-La limpieza normal y por Ctrl+C apaga el servidor y elimina solo la base generada por ese
-escenario. `--keep-failed-db` conserva la base fallida y registra su nombre, manteniendo el
-servidor apagado. Un cierre forzado del sistema puede impedir el teardown: los nombres
-exactos de las bases y directorios quedan en los reportes para su inspección.
+Normal cleanup and Ctrl+C stop the server and delete only the database generated for that
+scenario. `--keep-failed-db` preserves the failed database and records its name while keeping
+the server stopped. A forced system shutdown may prevent teardown: the exact database and
+directory names remain in the reports for inspection.
 
-## Límites
+## Limitations
 
-La primera ejecución real con MLflow 3.5.1 produjo 133 casos aprobados, 38 fallos y 20 fallos
-de setup, además de 44 APIs ausentes y 4 funciones no implementadas. Se corrigieron los
-fixtures y las aserciones del smoke identificados en esa ejecución y se ejecutaron nuevamente:
-la segunda ejecución produjo 167 casos aprobados, 24 fallos y
-ningún fallo de setup, con los mismos 44 casos upstream ausentes y 4 no implementados.
-Tras corregir el smoke y los conflictos de placeholders, listas protobuf y updates de
-assessments del plugin, una ejecución completa de 3.5.1 aprobó 190 casos sin fallos:
-45 quedaron como `UNAVAILABLE_UPSTREAM` y 4 como `NOT_IMPLEMENTED`. Esto no acredita otras
-versiones ni las funciones omitidas. Leer/parsear la fuente no verifica el contrato HTTP en cada MLflow.
-El [plan](PLAN.md) mantiene el inventario más
-amplio y la [cobertura](COVERAGE.md) distingue escenarios implementados de extensiones.
-No implementa fixes del plugin, proveedor propio de artifacts, S3/proxy, workspaces,
-webhooks, archivado de traces, fallos de drivers, límites BSON ni pruebas de carga.
+The first real MLflow 3.5.1 run produced 133 passing cases, 38 failures, and 20 setup failures,
+plus 44 unavailable APIs and 4 unimplemented features. Smoke fixtures and assertions identified
+in that run were corrected and rerun: the second run produced 167 passing cases, 24 failures,
+and no setup failures, with the same 44 unavailable upstream cases and 4 unimplemented cases.
+After correcting the smoke suite and the plugin's placeholder conflicts, protobuf list handling,
+and assessment updates, a full 3.5.1 run passed 190 cases with no failures:
+45 were marked `UNAVAILABLE_UPSTREAM` and 4 `NOT_IMPLEMENTED`. This result does not establish
+support for other versions or skipped features. Reading/parsing source code does not verify
+the HTTP contract for each MLflow version.
+The [plan](PLAN.md) maintains the broader inventory, and [coverage](COVERAGE.md) distinguishes
+implemented scenarios from extensions.
+The suite does not implement plugin fixes, a custom artifact provider, S3/proxy support,
+workspaces, webhooks, trace archiving, driver failures, BSON limits, or load testing.
